@@ -7,7 +7,7 @@ from os.path import isfile, join
 from datetime import datetime
 import time
 import BL_JPS
-import hashlib # For hashing unknown map configurations
+import subprocess
 
 from UTS_Imass_Miner_Pathing import get_worker_paths, get_worker_movement, allocate_miners, get_path, requires_rerouting
 
@@ -46,7 +46,6 @@ class Self_Learner_Tuning:
         self.parameter_ranges['workers'] = [0,1,2,3,4,200]
         self.parameter_ranges['fighters'] = 4
         self.build_order_success = {}
-        # self.agent_log_directory = 'E:/Dev/deleteme_data'
 
         # In the format miner, barracks, additional construction and attacking workers
         # Some manually set parameters that tend to cover a range of strategies.
@@ -54,6 +53,7 @@ class Self_Learner_Tuning:
         self.first_trial_configs = [ (1,0,200,()),(1,1,3,()),(1,3,2,()),(2,3,1,()),(3,0,200,()),(3,1,200,()),(3,3,3,()),(3,3,5,()),(4,1,4,()),(4,3,200,())]
         self.configs_trialed = 0
         self.sampled_configs = {}
+        
         self.config_file_path = None
         self.pgs_str = None # Used for re-iding the map
 
@@ -64,7 +64,7 @@ class Self_Learner_Tuning:
         if not filename:
             while exists:
                 map_id += 1
-                self.config_file_path = path+'/'+str(map_id)+'_config.json'
+                self.config_file_path = join(path,str(map_id)+'_config.json')
                 exists = os.path.isfile(self.config_file_path)
         else:
             self.config_file_path = join(path,filename)
@@ -126,8 +126,6 @@ class Self_Learner_Tuning:
             with open(self.config_file_path,'w') as f:
                 samples= [[str(x),self.sampled_configs[x]] for x in self.sampled_configs]
                 
-
-                # samples = str(self.sampled_configs)#.replace('(','"(').replace(')',')"')
                 json.dump({'pgs':self.pgs_str,'samples':samples},f)
 
 
@@ -144,53 +142,60 @@ class UTS_Imass_AI:
     
         self.unit_meta_data = {}
         self.current_time_log = {}
+        self.server_id = server_id
         self.all_time_log = {}
 
         self.bljps = BL_JPS.BL_JPS()
         self.pre_game_analysis_shared_memory = pre_game_analysis_shared_memory
-
+        self.agent_log_directory = None
+        if self.pre_game_analysis_shared_memory['manual_directory'] is not None:
+            self.agent_log_directory = self.pre_game_analysis_shared_memory['manual_directory']
         # If we are the odd numbered server then flag us as the dominant agent
         self.dominant_agent = (server_id % 2) == 1
         # if self.pre_game_analysis_shared_memory['sharing_enabled']:
             # print ('Hello im a self learner! Dominance:', self.dominant_agent)
 
         self.roster_map = {0:'Light',1:'Ranged',2:'Heavy'}
-
+        self.slave = False
         self.current_pgs = None
         self.process_game_meta_data()
         self.init_actions()
         self.reset()
 
+    def set_slave_mode(self):
+        self.slave = True
 
-    def begin_self_learning(self, temp_map_path, timelimit_seconds, pgs):
-        if timelimit_seconds > 1:
+    def begin_self_learning(self, timelimit_milliseconds, pgs):
+        if timelimit_milliseconds > 1000*60*2 and not self.slave: # need at least 2 minutes
             # return 
-            import subprocess
+            print ('timelimit ms',timelimit_milliseconds,self.server_id)
+            succ, temp_map_path = self.create_temp_map_file(pgs)
+            if succ:
+                start_time = datetime.now()
+                self.pre_game_analysis_shared_memory['sharing_enabled'] = True
+                # self.pre_game_analysis_shared_memory[('configs',str(pgs))].set_config_file_path(os.path.dirname(temp_map_path), str(pgs) )
 
-            start_time = datetime.now()
-            self.pre_game_analysis_shared_memory['sharing_enabled'] = True
-            # self.pre_game_analysis_shared_memory[('configs',str(pgs))].set_config_file_path(os.path.dirname(temp_map_path), str(pgs) )
+                try:
+                    # On the competition website it says we have 60 minutes per map to learn on
+                    # So lets stop 2 minutes before the cut off just to make sure we're under time
+                    while (datetime.now()-start_time).total_seconds() < timelimit_milliseconds/1000.0-2*60:
+                        run_time = (datetime.now()-start_time).total_seconds()
+                        print ('Training ... {:.1f}sec {:.1f}%'.format(run_time,run_time/(timelimit_milliseconds/1000.0)*100.0))
+                        # Remotely start our archived version of microrts to play games against our selves and store the results
+                        subprocess.call(['java', '-jar', 'remote_microrts_not_uts_imass.jar','-m',temp_map_path])
+                except Exception as e:
+                    print ("UTS_Imass python agent error during self learning")
+                    print ("Error:",e)
 
-            try:
-                # On the competition website it says we have 60 minutes per map to learn on
-                # So lets stop 2 minutes before the cut off just to make sure we're under time
-                while (datetime.now()-start_time).total_seconds() < timelimit_seconds-2*60:
-                    print ('Training ... ',(datetime.now()-start_time).total_seconds())
-                    # Remotely start our archived version of microrts to play games against our selves and store the results
-                    subprocess.call(['java', '-jar', 'remote_microrts_not_uts_imass.jar','-m',temp_map_path])
-            except Exception as e:
-                print ("UTS_Imass python agent error during self learning")
-                print ("Error:",e)
-
-            self.pre_game_analysis_shared_memory['sharing_enabled'] = False
-        
+                self.pre_game_analysis_shared_memory['sharing_enabled'] = False
+            
 
     def create_temp_map_file(self, pgs):
         if self.agent_log_directory is None:
             return False, ''
 
         try:
-            temp_file_path = self.agent_log_directory.replace('"','')+'/temp.xml'
+            temp_file_path = join(self.agent_log_directory,'temp.xml')
             with open(temp_file_path, 'w') as f:
                 start = ''
                 end = ''
@@ -278,6 +283,8 @@ class UTS_Imass_AI:
 
 
     def check_map_caches(self, pgs):
+        if self.slave:
+            return 
         pgs_str = str(pgs)
 
         # First attempt to load data from previous runs
@@ -286,7 +293,7 @@ class UTS_Imass_AI:
             for filename in onlyfiles:
                 if '_config.json' in filename:
                     loaded_pgs, sample_data = self.load_config(join(self.agent_log_directory, filename))
-                    if loaded_pgs :
+                    if loaded_pgs and ('configs',loaded_pgs) not in self.pre_game_analysis_shared_memory:
                         new_learner = Self_Learner_Tuning()
                         new_learner.set_config_file_path(self.agent_log_directory,loaded_pgs,filename)
                         new_learner.sampled_configs = sample_data
@@ -304,16 +311,15 @@ class UTS_Imass_AI:
 
 
     def pre_game_analysis(self, time_limit, read_write_directory, current_state_json):
-        # self.agent_log_directory = 'E:/Dev/deleteme_data'
-        if read_write_directory is not None:
-            self.agent_log_directory = read_write_directory.replace('\\','/').strip('"') 
+
+        if self.agent_log_directory is None and read_write_directory is not None:
+            self.agent_log_directory = read_write_directory.replace('\\','/').strip('"').replace('"','')
         self.pgs_str = str(current_state_json['pgs'])
 
         self.check_map_caches(current_state_json['pgs'])
         self.set_terrain(current_state_json['pgs']['width'],current_state_json['pgs']['height'],current_state_json['pgs']['terrain'], current_state_json['pgs'])
-        succ, map_log_dir = self.create_temp_map_file(current_state_json['pgs'])
-        if succ:
-            self.begin_self_learning(map_log_dir, time_limit,current_state_json['pgs'])
+
+        self.begin_self_learning(time_limit,current_state_json['pgs'])
 
     def process_game_meta_data(self):
         unit_data = self.game_meta_data['unitTypes']
@@ -1010,7 +1016,7 @@ class UTS_Imass_AI:
         self.config_name = None
         self.player_id = None
         self.enemy_id = None
-        self.agent_log_directory = None
+        # 
         self.map_filename = None
         self.terrain = None
         self.terrain_walls = None

@@ -4,9 +4,8 @@ from datetime import datetime
 import sys # For advanced error traceback
 import linecache # For advanced error traceback
 import traceback # For advanced error traceback
-
+import argparse
 from UTS_Imass_AI import UTS_Imass_AI
-
 try:
     import thread #python2
     from thread import allocate_lock
@@ -15,16 +14,23 @@ except:
     import _thread as thread
     from _thread import allocate_lock
 
+parser = argparse.ArgumentParser(description='Runs python socket server for MicroRTS AI UTS_Imass 2019')
+parser.add_argument('--dir',default = None, help="Directory where the training data is stored")
+parser.add_argument('--port', type=int, default=9823,help="Port for the server to host")
+args = parser.parse_args()
+
 def PrintException():
     exc_type, exc_value, exc_traceback = sys.exc_info()
     traceback.print_exception(exc_type, exc_value, exc_traceback,
                               limit=4, file=sys.stdout)
 
-PORT = 9823
+if args.dir is not None:
+	print ('UTS_Imass Bot data Directory:',args.dir)
+
+PORT = args.port
 PACKET_LENGTH = 1048576  # 1024K
 BUFFER_LEN = 1048576  # 1024K
 HOST_IP = '127.0.0.1'
-timeout_in_seconds = 5
 
 def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 	# print ('Running new UTS_Imass game server',addr, server_id)
@@ -50,6 +56,7 @@ def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 			run_server = False
 
 		msg = "ack"
+		# print (data)
 		if data[:9] == 'getAction':
 			# if reserved_json:
 			reserved_json += data
@@ -120,6 +127,8 @@ def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 				print ("UTS_Imass python bridge failed to utt contructor message to json. Error:",e, server_id)
 				PrintException()
 				run_server = False
+		elif data[:5] == 'slave':
+			imass_agent.set_slave_mode()
 
 		if run_server: 
 			try:
@@ -141,7 +150,7 @@ masterSocket.bind((HOST_IP, PORT))
 # masterSocket.setblocking(0)
 print("UTS_Imass Server Listening on IP:{} Port:{}".format(HOST_IP, PORT))
 server_id = 0
-pre_game_analysis_shared_memory = {'sharing_enabled':False,'log_directory':None}
+pre_game_analysis_shared_memory = {'sharing_enabled':False,'log_directory':None,'manual_directory':args.dir}
 while 1:
 	try:
 		masterSocket.listen(25)

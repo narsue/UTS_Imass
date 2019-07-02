@@ -46,6 +46,7 @@ class Self_Learner_Tuning:
         self.parameter_ranges['workers'] = [0,1,2,3,4,200]
         self.parameter_ranges['fighters'] = 4
         self.build_order_success = {}
+        # self.agent_log_directory = 'E:/Dev/deleteme_data'
 
         # In the format miner, barracks, additional construction and attacking workers
         # Some manually set parameters that tend to cover a range of strategies.
@@ -234,14 +235,14 @@ class UTS_Imass_AI:
             else:
                 if self.pre_game_analysis_shared_memory['sharing_enabled'] == False:
                     self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',self.pgs_str)].get_largest_config()
-
-                if self.dominant_agent:
-                    self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',str(pgs))].get_best_config()
                 else:
-                    if random.random()>0.6: # 40% of the time choose between rank 2-4
-                        self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',str(pgs))].get_best_config(random.randint(1,4))
+                    if self.dominant_agent:
+                        self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',str(pgs))].get_best_config()
                     else:
-                        self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',str(pgs))].get_explore_config()
+                        if random.random()>0.6: # 40% of the time choose between rank 2-4
+                            self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',str(pgs))].get_best_config(random.randint(1,4))
+                        else:
+                            self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',str(pgs))].get_explore_config()
             if not self.roster: # If no roster was given generate one
                 self.roster = tuple([random.randint(0,2) for i in range(random.randint(1,4))])
             if self.roster.count(self.roster[0]) == len(self.roster): # If all the elements are the same compress it to one element
@@ -303,7 +304,7 @@ class UTS_Imass_AI:
 
 
     def pre_game_analysis(self, time_limit, read_write_directory, current_state_json):
-        # self.agent_log_directory = 'E:/microrts-master/UTS_Imass_2019_Server/test'
+        # self.agent_log_directory = 'E:/Dev/deleteme_data'
         if read_write_directory is not None:
             self.agent_log_directory = read_write_directory.replace('\\','/').strip('"') 
         self.pgs_str = str(current_state_json['pgs'])

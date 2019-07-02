@@ -304,7 +304,7 @@ class UTS_Imass_AI:
 
     def pre_game_analysis(self, time_limit, read_write_directory, current_state_json):
         # self.agent_log_directory = 'E:/microrts-master/UTS_Imass_2019_Server/test'
-        if read_write_directory not None:
+        if read_write_directory is not None:
             self.agent_log_directory = read_write_directory.replace('\\','/').strip('"') 
         self.pgs_str = str(current_state_json['pgs'])
 

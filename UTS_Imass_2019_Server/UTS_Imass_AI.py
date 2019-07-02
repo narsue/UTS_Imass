@@ -294,12 +294,12 @@ class UTS_Imass_AI:
                         if pgs_str == loaded_pgs:
                             print ('This save was for the current map. Using saved settings')
 
-        # if no data exists for this run then build new data
-        if ('configs',pgs_str) not in self.pre_game_analysis_shared_memory:
-            new_learner = Self_Learner_Tuning()
-            new_learner.set_config_file_path(self.agent_log_directory,pgs_str)
-            self.pre_game_analysis_shared_memory[('configs',pgs_str)] = new_learner
-            print ('created config for this map',new_learner.config_file_path)  
+            # if no data exists for this run then build new data
+            if ('configs',pgs_str) not in self.pre_game_analysis_shared_memory:
+                new_learner = Self_Learner_Tuning()
+                new_learner.set_config_file_path(self.agent_log_directory,pgs_str)
+                self.pre_game_analysis_shared_memory[('configs',pgs_str)] = new_learner
+                print ('created config for this map',new_learner.config_file_path)  
 
 
     def pre_game_analysis(self, time_limit, read_write_directory, current_state_json):

@@ -1,6 +1,7 @@
 import json
 from socket import *
 from datetime import datetime
+import os
 import sys # For advanced error traceback
 import linecache # For advanced error traceback
 import traceback # For advanced error traceback
@@ -14,9 +15,17 @@ except:
     import _thread as thread
     from _thread import allocate_lock
 
+def foreced_training_time(x):
+    x = int(x)
+    if x < 5:
+        raise argparse.ArgumentTypeError("Minimum training time is 5 minutes")
+    return x
+
+
 parser = argparse.ArgumentParser(description='Runs python socket server for MicroRTS AI UTS_Imass 2019')
 parser.add_argument('--dir',default = None, help="Directory where the training data is stored")
 parser.add_argument('--port', type=int, default=9823,help="Port for the server to host")
+parser.add_argument('--force_train', type=foreced_training_time, help="Forces the agent to learn a new map for x minutes (requires --dir to be set). Min training time is 5 minutes.")
 args = parser.parse_args()
 
 def PrintException():
@@ -24,13 +33,26 @@ def PrintException():
     traceback.print_exception(exc_type, exc_value, exc_traceback,
                               limit=4, file=sys.stdout)
 
+
+
 if args.dir is not None:
 	print ('UTS_Imass Bot data Directory:',args.dir)
+
+
+
+if args.force_train is not None:
+	if args.dir is None:
+		print ('UTS_Imass Bot Forced Training requires a directory please use --dir to set one'.format(args.force_train))
+		exit()
+
+	print ('UTS_Imass Bot Forced Training enabled {} minutes for new maps'.format(args.force_train))
 
 PORT = args.port
 PACKET_LENGTH = 1048576  # 1024K
 BUFFER_LEN = 1048576  # 1024K
 HOST_IP = '127.0.0.1'
+
+
 
 def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 	# print ('Running new UTS_Imass game server',addr, server_id)
@@ -50,9 +72,9 @@ def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 			# data = c.recv(1024)
 			# data = data.decode(encoding='UTF-8')
 		except Exception as e:
-			# if '[WinError 10053]' not in str(e):
-			print ('UTS_Imass python bridge failed receiving data',e, server_id)
-			PrintException()
+			if '[WinError 10053]' not in str(e):
+				print ('UTS_Imass python bridge failed receiving data',e, server_id)
+				PrintException()
 			run_server = False
 
 		msg = "ack"
@@ -150,7 +172,18 @@ masterSocket.bind((HOST_IP, PORT))
 # masterSocket.setblocking(0)
 print("UTS_Imass Server Listening on IP:{} Port:{}".format(HOST_IP, PORT))
 server_id = 0
-pre_game_analysis_shared_memory = {'sharing_enabled':False,'log_directory':None,'manual_directory':args.dir}
+pre_game_analysis_shared_memory = {'sharing_enabled':False,'log_directory':None,'manual_directory':args.dir,'force_train':args.force_train}
+
+if args.dir is not None: 
+	# Check if the directory exists. If not attempt to create it
+	if not os.path.isdir(args.dir):
+		try:
+			os.makedirs(args.dir)
+			print ('Created data directory {} as it did not exist'.format(args.dir))
+		except Exception as e:
+			print ("Error UTS_Imass Server attempting to create data directory failed")
+			print (e)
+			exit()
 while 1:
 	try:
 		masterSocket.listen(25)

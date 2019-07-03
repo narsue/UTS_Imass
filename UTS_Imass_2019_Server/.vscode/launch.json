@@ -8,7 +8,7 @@
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
-            "args": ["--dir","e:/dev/deleteme_data"],
+            "args": ["--dir","e:/dev/deleteme_data5","--force_train","5"],
             "program": "${workspaceFolder}/UTS_Imass_Server.py",
             "console": "integratedTerminal"
         }

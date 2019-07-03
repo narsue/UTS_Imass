@@ -158,6 +158,8 @@ class UTS_Imass_AI:
         self.roster_map = {0:'Light',1:'Ranged',2:'Heavy'}
         self.slave = False
         self.current_pgs = None
+        self.performed_pre_game_ananlysis = False
+
         self.process_game_meta_data()
         self.init_actions()
         self.reset()
@@ -166,7 +168,34 @@ class UTS_Imass_AI:
         self.slave = True
 
     def begin_self_learning(self, timelimit_milliseconds, pgs):
-        if timelimit_milliseconds > 1000*60*2 and not self.slave: # need at least 2 minutes
+        if self.slave:
+            return 
+        # Make sure we are under the tournament alloted time by removing 2 minutes
+        timelimit_milliseconds_original = timelimit_milliseconds
+        timelimit_milliseconds -= 2*60*1000 
+
+        tournament_training = timelimit_milliseconds > 1000*60*2 and not self.slave
+        force_train = False
+        if self.pre_game_analysis_shared_memory['force_train'] is not None and not self.slave:
+            # Change to milliseconds
+            timelimit_milliseconds = int(self.pre_game_analysis_shared_memory['force_train']) * 60 * 1000 
+            if ('configs',self.pgs_str) not in self.pre_game_analysis_shared_memory:
+                print ('force_train: First time seeing this map. Beginning self training')
+                force_train = True
+                timelimit_milliseconds_original = timelimit_milliseconds
+
+        # if no data exists for this run then build new data
+        if ('configs',self.pgs_str) not in self.pre_game_analysis_shared_memory and self.agent_log_directory is not None:
+            new_learner = Self_Learner_Tuning()
+            new_learner.set_config_file_path(self.agent_log_directory,self.pgs_str)
+            self.pre_game_analysis_shared_memory[('configs',self.pgs_str)] = new_learner
+            print ('created config for this map',new_learner.config_file_path)  
+
+        if self.agent_log_directory is None:
+            tournament_training = force_train = False
+            print ('Cannot find directory to write and read training data from. Either run tournament in MicroRTS or set --dir flag for python server')
+
+        if tournament_training or force_train: # need at least 2 minutes
             # return 
             print ('timelimit ms',timelimit_milliseconds,self.server_id)
             succ, temp_map_path = self.create_temp_map_file(pgs)
@@ -178,17 +207,21 @@ class UTS_Imass_AI:
                 try:
                     # On the competition website it says we have 60 minutes per map to learn on
                     # So lets stop 2 minutes before the cut off just to make sure we're under time
-                    while (datetime.now()-start_time).total_seconds() < timelimit_milliseconds/1000.0-2*60:
+                    print ("UTS_Imass beginning self training. This will run for the specified time given {:.2f} minutes".format(timelimit_milliseconds_original/1000.0/60.0))
+                    while (datetime.now()-start_time).total_seconds() < timelimit_milliseconds/1000.0:
                         run_time = (datetime.now()-start_time).total_seconds()
                         print ('Training ... {:.1f}sec {:.1f}%'.format(run_time,run_time/(timelimit_milliseconds/1000.0)*100.0))
                         # Remotely start our archived version of microrts to play games against our selves and store the results
                         subprocess.call(['java', '-jar', 'remote_microrts_not_uts_imass.jar','-m',temp_map_path])
+                    print ('Training Completed')
                 except Exception as e:
                     print ("UTS_Imass python agent error during self learning")
                     print ("Error:",e)
 
                 self.pre_game_analysis_shared_memory['sharing_enabled'] = False
-            
+        else:
+            if timelimit_milliseconds_original > 1500:
+                print ("Error: UTS_Imass requires at least 5 minutes worth of time to train but was only given {:.2f} minutes".format(timelimit_milliseconds_original/1000.0/60.0)) 
 
     def create_temp_map_file(self, pgs):
         if self.agent_log_directory is None:
@@ -224,7 +257,6 @@ class UTS_Imass_AI:
 
     def set_terrain(self, map_width, map_height, terrain, pgs):
         if self.terrain is None:
-            self.pgs_str = str(pgs)
 
             self.terrain = terrain
             self.terrain_walls = [i for i, x in enumerate(self.terrain) if x != "0"]
@@ -233,21 +265,22 @@ class UTS_Imass_AI:
 
             # if 'configs' not in self.pre_game_analysis_shared_memory:
 
+    def assign_strategy(self):
             if ('configs',self.pgs_str) not in self.pre_game_analysis_shared_memory:
                 print ('Error: Requires pre training through pre-game-analysis to generate data to play from.')
-                print ('Error: Set to random mode.')
+                print ('Error: Set to random mode. Consider running server with flags --dir and --force_train')
                 self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = random.randint(0,5) , random.randint(0,3) , random.randint(0,5) ,()
             else:
                 if self.pre_game_analysis_shared_memory['sharing_enabled'] == False:
                     self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',self.pgs_str)].get_largest_config()
                 else:
                     if self.dominant_agent:
-                        self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',str(pgs))].get_best_config()
+                        self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',self.pgs_str)].get_best_config()
                     else:
                         if random.random()>0.6: # 40% of the time choose between rank 2-4
-                            self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',str(pgs))].get_best_config(random.randint(1,4))
+                            self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',self.pgs_str)].get_best_config(random.randint(1,4))
                         else:
-                            self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',str(pgs))].get_explore_config()
+                            self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',self.pgs_str)].get_explore_config()
             if not self.roster: # If no roster was given generate one
                 self.roster = tuple([random.randint(0,2) for i in range(random.randint(1,4))])
             if self.roster.count(self.roster[0]) == len(self.roster): # If all the elements are the same compress it to one element
@@ -285,41 +318,49 @@ class UTS_Imass_AI:
     def check_map_caches(self, pgs):
         if self.slave:
             return 
-        pgs_str = str(pgs)
+        pgs_str = self.pgs_str
 
         # First attempt to load data from previous runs
         if self.agent_log_directory is not None:
-            onlyfiles = [f for f in listdir(self.agent_log_directory) if isfile(join(self.agent_log_directory, f))]
-            for filename in onlyfiles:
-                if '_config.json' in filename:
-                    loaded_pgs, sample_data = self.load_config(join(self.agent_log_directory, filename))
-                    if loaded_pgs and ('configs',loaded_pgs) not in self.pre_game_analysis_shared_memory:
-                        new_learner = Self_Learner_Tuning()
-                        new_learner.set_config_file_path(self.agent_log_directory,loaded_pgs,filename)
-                        new_learner.sampled_configs = sample_data
-                        self.pre_game_analysis_shared_memory[('configs',loaded_pgs)] = new_learner
-                        print ('loaded config for map',join(self.agent_log_directory, filename)) 
-                        if pgs_str == loaded_pgs:
-                            print ('This save was for the current map. Using saved settings')
 
-            # if no data exists for this run then build new data
-            if ('configs',pgs_str) not in self.pre_game_analysis_shared_memory:
-                new_learner = Self_Learner_Tuning()
-                new_learner.set_config_file_path(self.agent_log_directory,pgs_str)
-                self.pre_game_analysis_shared_memory[('configs',pgs_str)] = new_learner
-                print ('created config for this map',new_learner.config_file_path)  
+            # Check if the directory exists. If not attempt to create it
+            if not os.path.isdir(self.agent_log_directory):
+                try:
+                    os.makedirs(self.agent_log_directory)
+                    print ('Created data directory {} as it did not exist'.format(self.agent_log_directory))
+                except Exception as e:
+                    print ("Error UTS_Imass Server attempting to create data directory failed")
+                    print (e)
+            else:
+                # Directory exists check it for stored configuration files
+                onlyfiles = [f for f in listdir(self.agent_log_directory) if isfile(join(self.agent_log_directory, f))]
+                for filename in onlyfiles:
+                    if '_config.json' in filename:
+                        loaded_pgs, sample_data = self.load_config(join(self.agent_log_directory, filename))
+                        if loaded_pgs and ('configs',loaded_pgs) not in self.pre_game_analysis_shared_memory:
+                            new_learner = Self_Learner_Tuning()
+                            new_learner.set_config_file_path(self.agent_log_directory,loaded_pgs,filename)
+                            new_learner.sampled_configs = sample_data
+                            self.pre_game_analysis_shared_memory[('configs',loaded_pgs)] = new_learner
+                            print ('loaded config for map',join(self.agent_log_directory, filename)) 
+                            if pgs_str == loaded_pgs:
+                                print ('This save was for the current map. Using saved settings')
+
+
 
 
     def pre_game_analysis(self, time_limit, read_write_directory, current_state_json):
-
+        self.performed_pre_game_ananlysis = True
         if self.agent_log_directory is None and read_write_directory is not None:
             self.agent_log_directory = read_write_directory.replace('\\','/').strip('"').replace('"','')
         self.pgs_str = str(current_state_json['pgs'])
-
-        self.check_map_caches(current_state_json['pgs'])
         self.set_terrain(current_state_json['pgs']['width'],current_state_json['pgs']['height'],current_state_json['pgs']['terrain'], current_state_json['pgs'])
 
+        self.check_map_caches(current_state_json['pgs'])
         self.begin_self_learning(time_limit,current_state_json['pgs'])
+
+        self.assign_strategy()
+
 
     def process_game_meta_data(self):
         unit_data = self.game_meta_data['unitTypes']
@@ -416,6 +457,11 @@ class UTS_Imass_AI:
             unit_data = self.unit_meta_data[self.possible_actions[action_id][2]]
             return unit_data['produceTime']
 
+    def is_structure(self, unit_type):
+        if unit_type == 'Base' or unit_type == 'Barracks':
+            return True
+        return False
+
     # Translates between my action description tuple (Action_Type, Direction, Production_Output)
     # To actions that can be sent to microrts
     def fill_action(self, my_unit, enemies, action, start_turn_actions):
@@ -429,10 +475,17 @@ class UTS_Imass_AI:
 
         if action[0] == 'Attack':
             if action[1] == 'Ranged':
-                
+                target = None
                 for enemy in enemies.values():
                     if self.can_hit_unit(my_unit, enemy, start_turn_actions):
-                        return Attack(my_unit, (enemy['x'], enemy['y']), self.cycle)   
+                        if target is None: # Priority 1 attack anything in range
+                            target = enemy
+                        elif self.is_structure(target['type']) and not self.is_structure(enemy['type']): # priority 2 attack units before structures
+                            target = enemy
+                        elif not self.is_structure(target['type']) and enemy['type'] == 'Ranged': # priority 3 Attack other ranged before anything else
+                            target = enemy
+
+                return Attack(my_unit, (target['x'], target['y']), self.cycle)   
                 print ('Error no attack target for ranged unit')
                 return Noop(my_unit, self.cycle)
             else:
@@ -814,7 +867,9 @@ class UTS_Imass_AI:
         self.player_id = my_player_id
         self.enemy_id = 1 - my_player_id 
         self.cycle = current_state_json['time']
-        self.set_terrain(current_state_json['pgs']['width'],current_state_json['pgs']['height'],current_state_json['pgs']['terrain'], current_state_json['pgs'])
+        if not self.performed_pre_game_ananlysis:
+            self.pre_game_analysis(0, None, current_state_json)
+        # self.set_terrain(current_state_json['pgs']['width'],current_state_json['pgs']['height'],current_state_json['pgs']['terrain'], current_state_json['pgs'])
         
         self.turn_actions = []
 
@@ -983,21 +1038,22 @@ class UTS_Imass_AI:
                 # if the config had originally specced more than needed than remove extra elements
                 # This should condense the data by transforming unreachable configs into commonly hit configs
                 self.assist_workers-=self.assist_miners
+
+                if self.max_barracks == 0:
+                    self.roster = ()  # If we never had any barracks they remove the roster it had no impact
+
                 config = self.assist_miners, self.assist_barracks, self.assist_workers, self.roster
-                # if self.dominant_agent:
-                #     print (config)
+
                 self.pre_game_analysis_shared_memory[('configs',self.pgs_str)].submit_config_score(config, winner_id==self.player_id, winner_id==-1, winner_id==self.enemy_id)
                 
-                if self.max_miners<5:
+                if self.max_miners<5 and self.assist_miners<5:
                     self.assist_miners = self.max_miners
                 self.assist_barracks = self.max_barracks
-                if self.max_workers<5:
-                    self.assist_workers = self.max_workers
+                if self.max_workers<5 and self.assist_workers<5:
+                    self.assist_workers = self.max_workers - self.max_miners
 
                 if self.assist_workers>200 :# hack for some bug where it goes to 400 for some reason
                     self.assist_workers = 200
-                if self.assist_barracks == 0:
-                    self.roster = ()  # If we never had any barracks they remove the roster it had no impact
 
                 config = self.assist_miners, self.assist_barracks, self.assist_workers, self.roster
                 

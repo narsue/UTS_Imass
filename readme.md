@@ -36,26 +36,21 @@ Requires a C++ library which is included as Python bindings for both Windows and
 8. Open a terminal window or IDE within the UTS_Imass/UTS_Imass_2019_Server directory
 9. Using python3.6 run 'python UTS_Imass_Server.py --dir training_data --force_train 5'
 
-'''
+```
 This will run the server and any new maps that the bot hasn't seen will be trained on for 5 minutes
-
 The training data will be stored in the local folder UTS_Imass/UTS_Imass_2019_Server directory/training_data
-'''
+```
 
 10. Within the MicroRTS GUI in Player 1 click the drop down and select UTS_Imass_SocketAI
 11. Click Start on the GUI
 12. In the UTS_Imass_Server terminal output you should see something like below where it gives training progress updates.
-'''
+```
 Now running self learning on precompiled micro rts
-
 UTS_Imass beginning self training. This will run for the specified time given 5.00 minutes
-
 Training ... 0.0sec 0.0%
-
 Training ... 0.8sec 0.3%
-
 Current best config is: (1, 0, 200, ()) [1.0, 2, 2]
-'''
+```
 
 13. After 5 minutes the training has completed and the visualisation will playout the game
 14. You can change to any other map or opponent to play against (Any new maps will incur the training process)

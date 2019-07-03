@@ -10,9 +10,13 @@ Requires Python 3.6.
 
 
 To run:
-`python UTS_Imass_Server.py <path/to/tournament>`
+`python UTS_Imass_Server.py'
 
-where `<path/to/tournament>` is the folder holding the `readWriteFolder` location passed in the preGameAnalysis step, as the `readWriteFolder` is relative but `UTS_Imass_Server` needs to run in it's own folder.
+Arguments:
+
+1. optional: --dir training_data_directory (Sets directory for training data - Overrides tournament directory)
+2. optional: --force_train X_Minutes (Forces training of X_minutes on maps the bot has not seen before - should not be used in tournaments)
+3. optional: --port 9823 
 
 Uses port 9823 and JSON for socket communication.
 

@@ -40,11 +40,15 @@ The training data will be stored in the local folder UTS_Imass/UTS_Imass_2019_Se
 11. Click Start on the GUI
 12. In the UTS_Imass_Server terminal output you should see something like below where it gives training progress updates.
 
-'Now running self learning on precompiled micro rts
+Now running self learning on precompiled micro rts
+
 UTS_Imass beginning self training. This will run for the specified time given 5.00 minutes
+
 Training ... 0.0sec 0.0%
+
 Training ... 0.8sec 0.3%
-Current best config is: (1, 0, 200, ()) [1.0, 2, 2]'
+
+Current best config is: (1, 0, 200, ()) [1.0, 2, 2]
 
 13. After 5 minutes the training has completed and the visualisation will playout the game
 14. You can change to any other map or opponent to play against (Any new maps will incur the training process)

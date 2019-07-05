@@ -319,6 +319,7 @@ class UTS_Imass_AI:
                             self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',self.pgs_str)].get_best_config(random.randint(1,4))
                         else:
                             self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',self.pgs_str)].get_explore_config()
+            self._assist_miners, self._assist_barracks, self._assist_workers, self._roster = self.assist_miners, self.assist_barracks, self.assist_workers, self.roster
             if not self.roster: # If no roster was given generate one
                 self.roster = tuple([random.randint(0,2) for i in range(random.randint(1,4))])
             if self.roster.count(self.roster[0]) == len(self.roster): # If all the elements are the same compress it to one element
@@ -745,6 +746,8 @@ class UTS_Imass_AI:
                     requires_new_worker = True
                 elif (self.worker_lines is not None and self.current_worker_count == len(self.worker_lines)) or self.worker_lines is None and self.num_barracks < self.assist_barracks:
                     requires_new_worker = True
+                elif self.worker_lines is None and self.assist_barracks == 0:
+                    requires_new_worker = True
 
 
             if self.created_worker_count >= self.assist_workers and not requires_new_worker:
@@ -1100,7 +1103,8 @@ class UTS_Imass_AI:
                 if self.max_barracks == 0:
                     self.roster = ()  # If we never had any barracks they remove the roster it had no impact
 
-                config = self.assist_miners, self.assist_barracks, self.assist_workers, self.roster
+                config = self._assist_miners, self._assist_barracks, self._assist_workers, self._roster # self.assist_miners, self.assist_barracks, self.assist_workers, self.roster
+                
 
                 self.pre_game_analysis_shared_memory[('configs',self.pgs_str)].submit_config_score(config, winner_id==self.player_id, winner_id==-1, winner_id==self.enemy_id)
                 

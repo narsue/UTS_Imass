@@ -8,6 +8,7 @@ from datetime import datetime
 import time
 import BL_JPS
 import subprocess
+import pickle
 
 from UTS_Imass_Miner_Pathing import get_worker_paths, get_worker_movement, allocate_miners, get_path, requires_rerouting
 
@@ -41,7 +42,7 @@ def Attack(unit, dst, current_cycle):
 class Self_Learner_Tuning:
     def __init__(self):
         self.parameter_ranges = {}
-        self.parameter_ranges['miners'] = [0,1,2,3,4,200]
+        self.parameter_ranges['miners'] = [0,1,2,3,4,5]
         self.parameter_ranges['barracks'] = [0,1,2,3,4]
         self.parameter_ranges['workers'] = [0,1,2,3,4,200]
         self.parameter_ranges['fighters'] = 4
@@ -56,6 +57,7 @@ class Self_Learner_Tuning:
         
         self.config_file_path = None
         self.pgs_str = None # Used for re-iding the map
+        self.cached_mining_routes = {}
 
     def set_config_file_path(self, path, pgs_str, filename = ''):
         map_id = 0
@@ -68,6 +70,33 @@ class Self_Learner_Tuning:
                 exists = os.path.isfile(self.config_file_path)
         else:
             self.config_file_path = join(path,filename)
+
+    def add_mining_config(self, mining_route, mining_base_loc, mining_mineral_loc):
+        miner_count = len(mining_route)
+        if miner_count not in self.cached_mining_routes:
+            self.cached_mining_routes[miner_count] = []
+        # mining_key =  mining_base_loc,mining_mineral_loc
+
+        self.cached_mining_routes[miner_count].append((set(mining_base_loc),set(mining_mineral_loc),mining_route))
+
+    def structure_block(self, miner_routes, structure_locs):
+        all_paths = set([p for x in miner_routes for p in x[3]])
+        return len(structure_locs.intersection(all_paths))
+
+    def get_mining_config(self, miner_count, mining_base_loc, mining_mineral_loc, structure_locs):
+        if miner_count not in self.cached_mining_routes:
+            return False, None
+        mining_base_loc = set(mining_base_loc)
+        mining_mineral_loc = set(mining_mineral_loc)
+        structure_locs = set(structure_locs)
+        for key_mining_base_loc, key_mining_mineral_loc, mining_route in self.cached_mining_routes[miner_count]:
+            if len(key_mining_base_loc.intersection(mining_base_loc)) == len(key_mining_base_loc):
+                if len(key_mining_mineral_loc.intersection(mining_mineral_loc)) == len(key_mining_mineral_loc):
+                # if len(set(mining_mineral_loc).intersection(set(mining_key[1]))) == len(mining_mineral_loc):
+                    if not self.structure_block(mining_route ,structure_locs):
+                        return True, mining_route
+        return False, None
+        
 
     def get_largest_config(self, rank_index=0):
         config = None
@@ -97,6 +126,7 @@ class Self_Learner_Tuning:
             config = self.first_trial_configs[self.configs_trialed]
             self.configs_trialed += 1
             return config 
+        self.configs_trialed += 1
         
         miners = random.choice(self.parameter_ranges['miners'])
         barracks = random.choice(self.parameter_ranges['barracks'])
@@ -123,10 +153,12 @@ class Self_Learner_Tuning:
         win_rate = self.sampled_configs[config][1]/float(self.sampled_configs[config][2])
         self.sampled_configs[config][0] = win_rate
         if self.config_file_path is not None:
-            with open(self.config_file_path,'w') as f:
-                samples= [[str(x),self.sampled_configs[x]] for x in self.sampled_configs]
-                
-                json.dump({'pgs':self.pgs_str,'samples':samples},f)
+            if self.configs_trialed % 5 == 0: # save every 5 trials
+                with open(self.config_file_path,'w') as f:
+                    samples= [[str(x),self.sampled_configs[x]] for x in self.sampled_configs]
+                    json.dump({'pgs':self.pgs_str,'samples':samples},f)
+                with open(self.config_file_path.replace('.json','.pkl'),'wb') as f:
+                    pickle.dump(self.cached_mining_routes,f,pickle.HIGHEST_PROTOCOL)
 
 
 
@@ -173,8 +205,9 @@ class UTS_Imass_AI:
         # Make sure we are under the tournament alloted time by removing 2 minutes
         timelimit_milliseconds_original = timelimit_milliseconds
         timelimit_milliseconds -= 2*60*1000 
-
         tournament_training = timelimit_milliseconds > 1000*60*2 and not self.slave
+        # print (timelimit_milliseconds_original, self.slave, timelimit_milliseconds > 1000*60*2)
+
         force_train = False
         if self.pre_game_analysis_shared_memory['force_train'] is not None and not self.slave:
             # Change to milliseconds
@@ -184,18 +217,21 @@ class UTS_Imass_AI:
                 force_train = True
                 timelimit_milliseconds_original = timelimit_milliseconds
 
-        # if no data exists for this run then build new data
-        if ('configs',self.pgs_str) not in self.pre_game_analysis_shared_memory and self.agent_log_directory is not None:
-            new_learner = Self_Learner_Tuning()
-            new_learner.set_config_file_path(self.agent_log_directory,self.pgs_str)
-            self.pre_game_analysis_shared_memory[('configs',self.pgs_str)] = new_learner
-            print ('created config for this map',new_learner.config_file_path)  
+
 
         if self.agent_log_directory is None:
             tournament_training = force_train = False
             print ('Cannot find directory to write and read training data from. Either run tournament in MicroRTS or set --dir flag for python server')
 
         if tournament_training or force_train: # need at least 2 minutes
+
+            # if no data exists for this run then build new data
+            if ('configs',self.pgs_str) not in self.pre_game_analysis_shared_memory and self.agent_log_directory is not None:
+                new_learner = Self_Learner_Tuning()
+                new_learner.set_config_file_path(self.agent_log_directory,self.pgs_str)
+                self.pre_game_analysis_shared_memory[('configs',self.pgs_str)] = new_learner
+                print ('created config for this map',new_learner.config_file_path)  
+
             # return 
             print ('timelimit ms',timelimit_milliseconds,self.server_id)
             succ, temp_map_path = self.create_temp_map_file(pgs)
@@ -266,11 +302,13 @@ class UTS_Imass_AI:
             # if 'configs' not in self.pre_game_analysis_shared_memory:
 
     def assign_strategy(self):
+            self.strategy = None
             if ('configs',self.pgs_str) not in self.pre_game_analysis_shared_memory:
                 print ('Error: Requires pre training through pre-game-analysis to generate data to play from.')
                 print ('Error: Set to random mode. Consider running server with flags --dir and --force_train')
                 self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = random.randint(0,5) , random.randint(0,3) , random.randint(0,5) ,()
             else:
+                self.strategy = self.pre_game_analysis_shared_memory[('configs',self.pgs_str)]
                 if self.pre_game_analysis_shared_memory['sharing_enabled'] == False:
                     self.assist_miners, self.assist_barracks, self.assist_workers, self.roster = self.pre_game_analysis_shared_memory[('configs',self.pgs_str)].get_largest_config()
                 else:
@@ -291,6 +329,8 @@ class UTS_Imass_AI:
 
     def load_config(self, config_file_path):
         sampled_configs = {}
+        cached_mining_routes = {}
+        pgs_data = ''
         if config_file_path is not None:
             if os.path.isfile(config_file_path):
                 with open(config_file_path,'r') as f:
@@ -311,8 +351,13 @@ class UTS_Imass_AI:
                         else:
                             key = (key[0],key[1],key[2],tuple(key[3:]))
                         sampled_configs[key] = value
-                    return data['pgs'], sampled_configs
-        return '', sampled_configs
+                    pgs_data = data['pgs']
+                    # return data['pgs'], sampled_configs
+            if os.path.isfile(config_file_path.replace('.json','.pkl')):
+                with open(config_file_path.replace('.json','.pkl'),'rb') as f:
+                    cached_mining_routes = pickle.load(f)
+
+        return pgs_data, sampled_configs, cached_mining_routes
 
 
     def check_map_caches(self, pgs):
@@ -336,9 +381,10 @@ class UTS_Imass_AI:
                 onlyfiles = [f for f in listdir(self.agent_log_directory) if isfile(join(self.agent_log_directory, f))]
                 for filename in onlyfiles:
                     if '_config.json' in filename:
-                        loaded_pgs, sample_data = self.load_config(join(self.agent_log_directory, filename))
+                        loaded_pgs, sample_data, mining_route_cache = self.load_config(join(self.agent_log_directory, filename))
                         if loaded_pgs and ('configs',loaded_pgs) not in self.pre_game_analysis_shared_memory:
                             new_learner = Self_Learner_Tuning()
+                            new_learner.cached_mining_routes = mining_route_cache
                             new_learner.set_config_file_path(self.agent_log_directory,loaded_pgs,filename)
                             new_learner.sampled_configs = sample_data
                             self.pre_game_analysis_shared_memory[('configs',loaded_pgs)] = new_learner
@@ -401,8 +447,9 @@ class UTS_Imass_AI:
     def build_mining_routes(self, resource_locs, base_locs, struct_locs):
         if self.worker_lines is not None:
             return True
+
+        succ, worker_lines = get_worker_paths(resource_locs, base_locs, struct_locs, self.map_width, self.map_height, self.miner_line_count, self.bljps, self.strategy)
         
-        succ, worker_lines = get_worker_paths(resource_locs, base_locs, struct_locs, self.map_width, self.map_height, self.miner_line_count, self.bljps)
         if not succ:
             # print ('Failed to initialise worker lines for {} workers'.format(self.miner_line_count))
             return False
@@ -611,9 +658,9 @@ class UTS_Imass_AI:
             if action[2] == 'Barracks': # Limit barracks produced
                 if self.num_barracks >= self.assist_barracks:
                     return False 
-            if action[2] == 'Worker': # Limit Workers produced
-                if self.created_worker_count >= self.assist_workers:
-                    return False
+            # if action[2] == 'Worker': # Limit Workers produced
+                # if self.created_worker_count >= self.assist_workers:
+                    # return False
 
             if (my_unit['x']+dx, my_unit['y']+dy ) in self.blocked_cells:
                 return False
@@ -692,7 +739,15 @@ class UTS_Imass_AI:
                 if len(valid_actions) == 0:              
                     valid_actions.append(0)  
         if my_unit['type'] == 'Base':
+            requires_new_worker = False
             if self.created_worker_count >= self.assist_workers:
+                if (self.worker_lines is not None and self.current_worker_count< len(self.worker_lines)): # requries a new miner
+                    requires_new_worker = True
+                elif (self.worker_lines is not None and self.current_worker_count == len(self.worker_lines)) or self.worker_lines is None and self.num_barracks < self.assist_barracks:
+                    requires_new_worker = True
+
+
+            if self.created_worker_count >= self.assist_workers and not requires_new_worker:
                 valid_actions = [0]
             else:
                 del valid_actions[0]
@@ -918,8 +973,8 @@ class UTS_Imass_AI:
                 self.all_game_worker_ids.add(unit)
                 my_workers.append(unit)
 
-        if self.cycle == 0:
-            self.created_worker_count = len(self.all_game_worker_ids)
+        # if self.cycle == 0:
+            # self.created_worker_count = len(self.all_game_worker_ids)
 
         self.end_game_assist = players_money[1] == 0
         for unit in en_units:
@@ -929,10 +984,13 @@ class UTS_Imass_AI:
             else:
                 self.end_game_assist = False
 
+        self.current_worker_count = len(my_workers)
+        
         for action in start_turn_actions:
             if action['ID'] in my_units and 'unitType' in action['action'] and action['action']['unitType'] == 'Barracks':
                 self.num_barracks += 1
- 
+            if action['ID'] in my_units and 'unitType' in action['action'] and action['action']['unitType'] == 'Worker':
+                self.current_worker_count += 1 
 
         # If we fail to build mining routes just have the AI idle
         # If the number of resources or bases has changed
@@ -949,6 +1007,7 @@ class UTS_Imass_AI:
                     start_routing = time.time()
                     self.build_mining_routes(list(resource_locs), self.base_locs, struct_locs)
                     self.current_time_log['routing_time'] = time.time() - start_routing
+                    # print ('routing_time', self.current_time_log['routing_time'])
                     self.worker_line_locs = set()
                     if self.worker_lines is not None:
                         for line in self.worker_lines:
@@ -974,7 +1033,6 @@ class UTS_Imass_AI:
         self.calc_available_funds(my_units, start_turn_actions, players_money)
         self.block_in_progress_actions(my_units, en_units, start_turn_actions, resource_locs)
            
-        self.current_worker_count = len(my_workers)
 
         self.max_miners = max(self.max_miners, len(self.miner_mapping))
         self.max_workers = max(self.current_worker_count, self.max_workers)
@@ -1068,6 +1126,7 @@ class UTS_Imass_AI:
     def reset(self):
         # random.seed(self.episode_num)
 
+        self.strategy = None
 
         self.config_name = None
         self.player_id = None

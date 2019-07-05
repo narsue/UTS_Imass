@@ -66,11 +66,17 @@ def requires_rerouting(resource_locs, base_locs, struct_locs, map_width, map_hei
 
 
 
-def get_worker_lines(matrix, resource_locs, base_locs, worker_count, bljps, map_width, map_height):
+
+
+def get_worker_lines(matrix, resource_locs, base_locs, worker_count, bljps, map_width, map_height, strategy, structure_locs):
     s = time.time()
 
     resource_mining_locs = get_resource_mining_locs(matrix, resource_locs, map_width, map_height)
     return_locs          = get_resource_mining_locs(matrix, base_locs, map_width, map_height)
+
+    succ, new_routes = strategy.get_mining_config(worker_count, return_locs, resource_mining_locs, structure_locs)
+    if succ:
+        return True, new_routes
 
     bljps.preProcessGrid(matrix, map_width, map_height)
 
@@ -91,6 +97,10 @@ def get_worker_lines(matrix, resource_locs, base_locs, worker_count, bljps, map_
         return False, []
 
     if worker_count == 1:
+        cache_return_locs = (possible_routes[0][2],)
+        cache_mining_locs = (possible_routes[0][1],)
+        strategy.add_mining_config([possible_routes[0]], cache_return_locs, cache_mining_locs)
+
         return True, [possible_routes[0]]
 
     # Now we have to identify the optimal subset of routes
@@ -105,8 +115,17 @@ def get_worker_lines(matrix, resource_locs, base_locs, worker_count, bljps, map_
         d, indexes, used_set = heapq.heappop(pqueue)
         if len(indexes) == worker_count:
             # print ('worker lines',worker_count,len(indexes),time.time()-s)
+            mining_routes = [possible_routes[x] for x in indexes]
 
-            return True, [possible_routes[x] for x in indexes]
+            cache_return_locs = tuple([x[2] for x in mining_routes])
+            cache_mining_locs = tuple([x[1] for x in mining_routes])
+
+            strategy.add_mining_config(mining_routes, cache_return_locs, cache_mining_locs)
+
+
+
+            return True, mining_routes
+
         elif len(indexes) > len(result):
             result = [possible_routes[x] for x in indexes]
             
@@ -126,18 +145,25 @@ def get_worker_lines(matrix, resource_locs, base_locs, worker_count, bljps, map_
                     heapq.heappush(pqueue, (d+possible_routes[i][0], new_indexes, new_union))
                     closed_pos.add(tuple(new_indexes))
     if len(result):
+
+
+        cache_return_locs = tuple([x[2] for x in result])
+        cache_mining_locs = tuple([x[1] for x in result])
+
+        strategy.add_mining_config(result, base_locs, resource_locs)
+
         return True, result
 
 
     return False, []
 
-def get_worker_paths(resource_locs, base_locs, structure_locs, map_width, map_height, worker_count, bljps):
+def get_worker_paths(resource_locs, base_locs, structure_locs, map_width, map_height, worker_count, bljps, strategy):
     # Matrix dictionary
     # 0 is free space
     # 1 is resources
     # 2 is a base structure
 
-    if worker_count == 0:
+    if worker_count == 0 or strategy is None:
         return True, []
 
     matrix = [0]*(map_height*map_width)
@@ -150,7 +176,7 @@ def get_worker_paths(resource_locs, base_locs, structure_locs, map_width, map_he
     for x,y in base_locs:
         matrix[y*map_width+x] = 2 
 
-    worker_lines = get_worker_lines(matrix,resource_locs,base_locs, worker_count, bljps, map_width, map_height)
+    worker_lines = get_worker_lines(matrix,resource_locs,base_locs, worker_count, bljps, map_width, map_height, strategy, structure_locs)
 
     return worker_lines
 

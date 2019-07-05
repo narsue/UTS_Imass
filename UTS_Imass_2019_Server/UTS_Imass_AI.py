@@ -744,7 +744,7 @@ class UTS_Imass_AI:
             if self.created_worker_count >= self.assist_workers:
                 if (self.worker_lines is not None and self.current_worker_count< len(self.worker_lines)): # requries a new miner
                     requires_new_worker = True
-                elif (self.worker_lines is not None and self.current_worker_count == len(self.worker_lines)) or self.worker_lines is None and self.num_barracks < self.assist_barracks:
+                elif ((self.worker_lines is not None and self.current_worker_count == len(self.worker_lines)) or self.worker_lines) is None and self.num_barracks < self.assist_barracks:
                     requires_new_worker = True
                 elif self.worker_lines is None and self.assist_barracks == 0:
                     requires_new_worker = True

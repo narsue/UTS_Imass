@@ -53,7 +53,6 @@ BUFFER_LEN = 1048576  # 1024K
 HOST_IP = '127.0.0.1'
 
 
-
 def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 	# print ('Running new UTS_Imass game server',addr, server_id)
 	pregame_len = len('preGameAnalysis')
@@ -172,7 +171,7 @@ masterSocket.bind((HOST_IP, PORT))
 # masterSocket.setblocking(0)
 print("UTS_Imass Server Listening on IP:{} Port:{}".format(HOST_IP, PORT))
 server_id = 0
-pre_game_analysis_shared_memory = {'sharing_enabled':False,'log_directory':None,'manual_directory':args.dir,'force_train':args.force_train}
+pre_game_analysis_shared_memory = {'sharing_enabled':False,'loaded_training_data':False,'manual_directory':args.dir,'force_train':args.force_train}
 
 if args.dir is not None: 
 	# Check if the directory exists. If not attempt to create it

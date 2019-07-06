@@ -364,10 +364,17 @@ class UTS_Imass_AI:
     def check_map_caches(self, pgs):
         if self.slave:
             return 
+        if self.pre_game_analysis_shared_memory['loaded_training_data']:
+            return
+
         pgs_str = self.pgs_str
+
 
         # First attempt to load data from previous runs
         if self.agent_log_directory is not None:
+
+            # Only attempt to load training data the very first time the bot runs this function
+            self.pre_game_analysis_shared_memory['loaded_training_data'] = True
 
             # Check if the directory exists. If not attempt to create it
             if not os.path.isdir(self.agent_log_directory):
@@ -744,7 +751,7 @@ class UTS_Imass_AI:
             if self.created_worker_count >= self.assist_workers:
                 if (self.worker_lines is not None and self.current_worker_count< len(self.worker_lines)): # requries a new miner
                     requires_new_worker = True
-                elif ((self.worker_lines is not None and self.current_worker_count == len(self.worker_lines)) or self.worker_lines) is None and self.num_barracks < self.assist_barracks:
+                elif ((self.worker_lines is not None and self.current_worker_count == len(self.worker_lines)) or self.worker_lines is None)  and self.num_barracks < self.assist_barracks:
                     requires_new_worker = True
                 elif self.worker_lines is None and self.assist_barracks == 0:
                     requires_new_worker = True
@@ -925,8 +932,10 @@ class UTS_Imass_AI:
         self.player_id = my_player_id
         self.enemy_id = 1 - my_player_id 
         self.cycle = current_state_json['time']
+
         if not self.performed_pre_game_ananlysis:
             self.pre_game_analysis(0, None, current_state_json)
+            self.current_time_log['pre_game'] = time.time()-start_frame
         # self.set_terrain(current_state_json['pgs']['width'],current_state_json['pgs']['height'],current_state_json['pgs']['terrain'], current_state_json['pgs'])
         
         self.turn_actions = []
@@ -1071,11 +1080,12 @@ class UTS_Imass_AI:
                 all_actions.append(new_action)
                 self.in_progress[unit['ID']] = new_action
                 self.turn_actions.append(action_id)
+
         
         frame_time = time.time() - start_frame
         self.current_time_log['forward_total'] = frame_time
         if self.current_time_log['forward_total'] > 0.07:
-            print (self.current_time_log)
+            print (self.cycle, self.current_time_log)
         return all_actions
 
     def backward(self, winner_id):    

@@ -559,15 +559,16 @@ class UTS_Imass_AI:
         return Noop(my_unit, self.cycle)
 
     def can_hit_unit(self, my_unit, enemy, start_turn_actions):
-        d = abs(my_unit['x']- enemy['x']) + abs(my_unit['y']- enemy['y'])
-        # min_d = max(abs(my_unit['x']- enemy['x']), abs(my_unit['y']- enemy['y']))
+        # d = abs(my_unit['x']- enemy['x']) + abs(my_unit['y']- enemy['y'])
+        min_d = (my_unit['x']- enemy['x'])**2 + (my_unit['y']- enemy['y'])**2
         my_unit_attack_range = self.unit_meta_data[my_unit['type']]['attackRange']
         my_unit_attack_time = self.unit_meta_data[my_unit['type']]['attackTime']
         enemy_move_time = self.unit_meta_data[enemy['type']]['moveTime']
 
-        # if (d > 1 and my_unit_attack_range == 1) or (my_unit_attack_range > 1 and min_d > my_unit_attack_range-1):
+        # if (d > 1 and my_unit_attack_range == 1) or (my_unit_attack_range > 1 and my_unit_attack_range**2 < min_d ):
+        if my_unit_attack_range**2 < min_d:
 
-        if my_unit_attack_range < d:
+        # if my_unit_attack_range < d:
             return False
 
         for s_action in start_turn_actions:
@@ -595,15 +596,17 @@ class UTS_Imass_AI:
                     ny += dy
                     # The enemy would move before or on the same cycle we could attack
                     # So don't bother trying to attack them
-                    d = abs(my_unit['x']- nx) + abs(my_unit['y']- ny)
-                    # min_d = max(abs(my_unit['x']- nx), abs(my_unit['y']- ny))
-                    if my_unit_attack_range >= d:
+                    # d = abs(my_unit['x']- nx) + abs(my_unit['y']- ny)
+                    min_d = (my_unit['x']- nx)**2 + (my_unit['y']- ny)**2
+                    if my_unit_attack_range**2 >= min_d:
+                    # if my_unit_attack_range >= d:
                         return True
                         
-        d = abs(my_unit['x']- cx) + abs(my_unit['y']- cy)
-        # min_d = max(abs(my_unit['x']- cx), abs(my_unit['y']- cy))
-        # if ((d > 1 and my_unit_attack_range == 1) or (my_unit_attack_range > 1 and min_d > (my_unit_attack_range-1))):
-        if my_unit_attack_range >= d:
+        # d = abs(my_unit['x']- cx) + abs(my_unit['y']- cy)
+        min_d = (my_unit['x']- cx)**2 + (my_unit['y']- cy)**2
+
+        if my_unit_attack_range**2 >= min_d:
+
             return True
 
         return False
@@ -812,7 +815,7 @@ class UTS_Imass_AI:
                             if p and (len(p)<len(best_p) or not best_p):
                                 best_p = p
                             if my_unit['type'] == 'Ranged' and not p:
-                                for dx,dy in ((-3,0),(3,0),(0,-3),(0,3),(1,-2),(2,-1)):
+                                for dx,dy in ((-3,0),(3,0),(0,-3),(0,3),(2,-2),(2,-2)):
                                     if (e['x']+dx,e['y']+dy) not in self.blocked_cells:
                                         p = get_path((my_unit['x'],my_unit['y']), (e['x']+dx,e['y']+dy), self.map_width, self.map_height, self.blocked_cells, self.bljps)
                                         if p:

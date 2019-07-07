@@ -164,7 +164,7 @@ class Self_Learner_Tuning:
 
 class UTS_Imass_AI:
 
-    def __init__(self, utt, server_id, pre_game_analysis_shared_memory):
+    def __init__(self, utt, server_id, pre_game_analysis_shared_memory, budget):
         self.actions = []
         self.game_meta_data = utt
 
@@ -176,6 +176,7 @@ class UTS_Imass_AI:
         self.current_time_log = {}
         self.server_id = server_id
         self.all_time_log = {}
+        self.BUDGET_SECONDS = budget
 
         self.bljps = BL_JPS.BL_JPS()
         self.pre_game_analysis_shared_memory = pre_game_analysis_shared_memory
@@ -198,6 +199,8 @@ class UTS_Imass_AI:
 
     def set_slave_mode(self):
         self.slave = True
+        # Slave learning process doesn't need to follow time budgets
+        self.BUDGET_SECONDS = None
 
     def begin_self_learning(self, timelimit_milliseconds, pgs):
         if self.slave:
@@ -1055,39 +1058,47 @@ class UTS_Imass_AI:
 
         all_actions = []
         this_cycle_actions = []
+        skipped_actions_for_budget = False
         for unit in my_units.values():
             if unit['ID'] in self.in_progress:
                 continue
             else:
-                replay_action = None
-                new_action, action_desc, action_id = self.get_action(unit, my_units, en_units, resource_locs, start_turn_actions, players_money, replay_action, this_cycle_actions)
-                if action_desc[0] == 'Move' or action_desc[0] == 'Produce':
-                    dx, dy, dir_param = self.get_dir(action_desc[1])
-                    if (unit['x']+dx,unit['y']+dy) in self.blocked_cells:
-                        print ('Error cannot make units use the same grid location')
-                    self.block_cell(unit['x']+dx,unit['y']+dy)
+                # Check if we are getting too close to exceeding our time allocation. If so just assign everyone a noop who needs an action and deal with them next cycle
+                if self.BUDGET_SECONDS is not None and not self.slave and (time.time() - start_frame) > self.BUDGET_SECONDS*0.93 and not self.pre_game_analysis_shared_memory['ignore_budget']:
+                    skipped_actions_for_budget = True
+                    all_actions.append(Noop(unit, self.cycle))
+                else:
+                    replay_action = None
+                    new_action, action_desc, action_id = self.get_action(unit, my_units, en_units, resource_locs, start_turn_actions, players_money, replay_action, this_cycle_actions)
+                    if action_desc[0] == 'Move' or action_desc[0] == 'Produce':
+                        dx, dy, dir_param = self.get_dir(action_desc[1])
+                        if (unit['x']+dx,unit['y']+dy) in self.blocked_cells:
+                            print ('Error cannot make units use the same grid location')
+                        self.block_cell(unit['x']+dx,unit['y']+dy)
 
-                    if action_desc[0] == 'Produce':
-                        self.player_funds -= self.get_unit_cost(action_desc[2])
+                        if action_desc[0] == 'Produce':
+                            self.player_funds -= self.get_unit_cost(action_desc[2])
 
 
-                        if action_desc[2] == 'Barracks':
-                            self.num_barracks += 1
-                        if action_desc[2] == 'Worker':
-                            self.current_worker_count += 1
-                            self.created_worker_count += 1 # Temporary increase. Set permanently when the unit spawns
-                        if self.roster and (action_desc[2] == 'Light' or action_desc[2] == 'Ranged' or action_desc[2] == 'Heavy'):
-                            self.roster_id = (self.roster_id+1) % len(self.roster)
+                            if action_desc[2] == 'Barracks':
+                                self.num_barracks += 1
+                            if action_desc[2] == 'Worker':
+                                self.current_worker_count += 1
+                                self.created_worker_count += 1 # Temporary increase. Set permanently when the unit spawns
+                            if self.roster and (action_desc[2] == 'Light' or action_desc[2] == 'Ranged' or action_desc[2] == 'Heavy'):
+                                self.roster_id = (self.roster_id+1) % len(self.roster)
 
-                this_cycle_actions.append((unit['ID'],action_id))
-                all_actions.append(new_action)
-                self.in_progress[unit['ID']] = new_action
-                self.turn_actions.append(action_id)
+                    this_cycle_actions.append((unit['ID'],action_id))
+                    all_actions.append(new_action)
+                    self.in_progress[unit['ID']] = new_action
+                    self.turn_actions.append(action_id)
 
-        
+        if skipped_actions_for_budget:
+            print (self.cycle, 'Warning time usage too high skipped actions')
+
         frame_time = time.time() - start_frame
         self.current_time_log['forward_total'] = frame_time
-        if self.current_time_log['forward_total'] > 0.07:
+        if self.BUDGET_SECONDS is not None and self.current_time_log['forward_total'] >= self.BUDGET_SECONDS:
             print (self.cycle, self.current_time_log)
         return all_actions
 

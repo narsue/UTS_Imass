@@ -15,7 +15,7 @@ except:
     import _thread as thread
     from _thread import allocate_lock
 
-def foreced_training_time(x):
+def forced_training_time(x):
     x = int(x)
     if x < 5:
         raise argparse.ArgumentTypeError("Minimum training time is 5 minutes")
@@ -25,7 +25,8 @@ def foreced_training_time(x):
 parser = argparse.ArgumentParser(description='Runs python socket server for MicroRTS AI UTS_Imass 2019')
 parser.add_argument('--dir',default = None, help="Directory where the training data is stored")
 parser.add_argument('--port', type=int, default=9823,help="Port for the server to host")
-parser.add_argument('--force_train', type=foreced_training_time, help="Forces the agent to learn a new map for x minutes (requires --dir to be set). Min training time is 5 minutes.")
+parser.add_argument('--force_train', type=forced_training_time, help="Forces the agent to learn a new map for x minutes (requires --dir to be set). Min training time is 5 minutes.")
+parser.add_argument('--ignore_budget', action='store_true' , help="Optional arguement to have bot ignore time budget when deciding unit actions. Useful for debugging. Do not use in tournaments as overtime will count as a loss")
 args = parser.parse_args()
 
 def PrintException():
@@ -37,7 +38,8 @@ def PrintException():
 
 if args.dir is not None:
 	print ('UTS_Imass Bot data Directory:',args.dir)
-
+if args.ignore_budget is not None:
+	print ('UTS_Imass Bot ignoring time budget')
 
 
 if args.force_train is not None:
@@ -59,6 +61,7 @@ def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 	gameOver_len = len('gameOver')
 	physical_state = None
 	imass_agent = None
+	budget = None
 	packetData = c.send(bytes("UTS_Imass_Server"+"\r\n",'UTF-8'))
 	reserved_json = ''
 	run_server = True
@@ -86,7 +89,7 @@ def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 			reserved_json = ''
 			try:
 				# print('start')
-				frame_start = datetime.now()
+				# frame_start = datetime.now()
 
 				json_index = data.index('\n')
 				gs = json.loads(data[json_index+1:])
@@ -95,9 +98,9 @@ def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 				msg = json.dumps(msg)
 				# print('end')
 
-				frame_duration = (datetime.now()-frame_start).total_seconds()
-				if frame_duration > 0.095: # should remain under 100 ms
-					print ('Warning FrameTime Seconds:{}'.format(frame_duration), server_id)
+				# frame_duration = (datetime.now()-frame_start).total_seconds()
+				# if frame_duration > 0.095: # should remain under 100 ms
+				# 	print ('Warning FrameTime Seconds:{}'.format(frame_duration), server_id)
 			except Exception as e:
 				print ("UTS_Imass python bridge failed to convert getAction to json. Error:",e, server_id)
 				PrintException()
@@ -134,7 +137,12 @@ def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 				PrintException()
 
 			run_server = False
-
+		elif data[:6] == 'budget':
+			try:
+				budget = int(data.split()[1])*0.001
+			except Exception as e:
+				print ("UTS_Imass python bridge process budget message. Error:",e, server_id)
+				PrintException()		
 
 		elif data[:3] == 'utt':
 			try:
@@ -143,7 +151,7 @@ def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 				reserved_json = ''
 				if imass_agent is None:
 					physical_state = json.loads(data[4:])
-					imass_agent = UTS_Imass_AI(physical_state, server_id, pre_game_analysis_shared_memory)
+					imass_agent = UTS_Imass_AI(physical_state, server_id, pre_game_analysis_shared_memory, budget)
 			except Exception as e:
 				print ("UTS_Imass python bridge failed to utt contructor message to json. Error:",e, server_id)
 				PrintException()
@@ -171,7 +179,7 @@ masterSocket.bind((HOST_IP, PORT))
 # masterSocket.setblocking(0)
 print("UTS_Imass Server Listening on IP:{} Port:{}".format(HOST_IP, PORT))
 server_id = 0
-pre_game_analysis_shared_memory = {'sharing_enabled':False,'loaded_training_data':False,'manual_directory':args.dir,'force_train':args.force_train}
+pre_game_analysis_shared_memory = {'sharing_enabled':False,'loaded_training_data':False,'manual_directory':args.dir,'force_train':args.force_train, 'ignore_budget':args.ignore_budget}
 
 if args.dir is not None: 
 	# Check if the directory exists. If not attempt to create it

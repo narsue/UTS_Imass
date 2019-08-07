@@ -17,6 +17,8 @@ Arguments:
 1. optional: --dir training_data_directory (Sets directory for training data - Overrides tournament directory)
 2. optional: --force_train X_Minutes (Forces training of X_minutes on maps the bot has not seen before - should not be used in tournaments)
 3. optional: --port 9823 
+3. optional: --timeout X_Seconds (Will automatically close game sessions when a packet has not been received after this amount of time)
+3. optional: --ignore_budget (Used to ignore time budget parameters - Should only be used for debugging purposes)
 
 Uses port 9823 and JSON for socket communication.
 
@@ -64,4 +66,4 @@ A competition differs from the previous instructions as MicroRTS provides the UT
 
 1. For this case you can choose if you want the UTS_Imass agent to use a directory of your choice (use --dir) or the tournament directories (do not use --dir)
 2. It is best to not use the --force_train arguement with tournament settings as the tournament should dictate the amount of time each AI gets to spend on training. Defining a value for --force_train may cause the bot to train for too long and be disqualified due to exceeding time constraints
-3. It is best to use the provided UTS_Imass_SocketAI to play in the tournament as it has been slightly modified relative to the SocketAI version. Basic changes include providing the tournament directory as an absolute path instead of a relative path and setting the default port and language to match UTS_Imass settings
+3. It is best to use the provided UTS_Imass_SocketAI to play in the tournament

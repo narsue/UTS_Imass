@@ -6,6 +6,8 @@ import sys # For advanced error traceback
 import linecache # For advanced error traceback
 import traceback # For advanced error traceback
 import argparse
+from time import sleep
+
 from UTS_Imass_AI import UTS_Imass_AI
 try:
     import thread #python2
@@ -27,6 +29,8 @@ parser.add_argument('--dir',default = None, help="Directory where the training d
 parser.add_argument('--port', type=int, default=9823,help="Port for the server to host")
 parser.add_argument('--force_train', type=forced_training_time, help="Forces the agent to learn a new map for x minutes (requires --dir to be set). Min training time is 5 minutes.")
 parser.add_argument('--ignore_budget', action='store_true' , help="Optional arguement to have bot ignore time budget when deciding unit actions. Useful for debugging. Do not use in tournaments as overtime will count as a loss")
+parser.add_argument('--timeout', type=int, default=10,help="Time in seconds the server will close a connection after last packet received")
+
 args = parser.parse_args()
 
 def PrintException():
@@ -38,9 +42,8 @@ def PrintException():
 
 if args.dir is not None:
 	print ('UTS_Imass Bot data Directory:',args.dir)
-if args.ignore_budget is not None:
+if args.ignore_budget is not None and args.ignore_budget:
 	print ('UTS_Imass Bot ignoring time budget')
-
 
 if args.force_train is not None:
 	if args.dir is None:
@@ -53,7 +56,9 @@ PORT = args.port
 PACKET_LENGTH = 1048576  # 1024K
 BUFFER_LEN = 1048576  # 1024K
 HOST_IP = '127.0.0.1'
+SOCKET_TIMEOUT_SECONDS = args.timeout
 
+print ('UTS_Imass Bot Timeout set for {} seconds'.format(SOCKET_TIMEOUT_SECONDS))
 
 def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 	# print ('Running new UTS_Imass game server',addr, server_id)
@@ -65,19 +70,31 @@ def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 	packetData = c.send(bytes("UTS_Imass_Server"+"\r\n",'UTF-8'))
 	reserved_json = ''
 	run_server = True
+	last_known_packet = datetime.now()
+
 	while run_server:
 		try:
 
 			data = ""
 			while not data.endswith("\n"):
 				data += c.recv(PACKET_LENGTH).decode("utf-8")
-			# data = c.recv(1024)
-			# data = data.decode(encoding='UTF-8')
+
+				if not data:
+					sleep(0.0001)
+				if (datetime.now()-last_known_packet).total_seconds() > SOCKET_TIMEOUT_SECONDS:
+					print ("No packets received in {} seconds (No gameover signal received), closing server".format(SOCKET_TIMEOUT_SECONDS), server_id)
+					run_server = False
+					break
+			last_known_packet = datetime.now()
+			
 		except Exception as e:
-			if '[WinError 10053]' not in str(e):
+			if e.args[0] == 'timed out':
+				print ("Timeout - No packets received in {} seconds (No gameover signal received), closing server".format(SOCKET_TIMEOUT_SECONDS), server_id)
+			elif '[WinError 10053]' not in str(e):
 				print ('UTS_Imass python bridge failed receiving data',e, server_id)
 				PrintException()
 			run_server = False
+
 
 		msg = "ack"
 		# print (data)
@@ -158,6 +175,7 @@ def run_server(c, addr, server_id, pre_game_analysis_shared_memory ):
 				run_server = False
 		elif data[:5] == 'slave':
 			imass_agent.set_slave_mode()
+		last_known_packet = datetime.now()
 
 		if run_server: 
 			try:
@@ -195,6 +213,7 @@ while 1:
 	try:
 		masterSocket.listen(25)
 		c, addr = masterSocket.accept()  
+		c.settimeout(SOCKET_TIMEOUT_SECONDS)
 		thread.start_new_thread( run_server, (c, addr, server_id, pre_game_analysis_shared_memory) )
 		server_id += 1
 	except Exception as e:
